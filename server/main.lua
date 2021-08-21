@@ -13,21 +13,21 @@ AddEventHandler('mrp_doorlock:updateState', function(doorID, locked, src, usedLo
 	local xPlayer = MRP_SERVER.getSpawnedCharacter(playerId)
 
 	if type(doorID) ~= 'number' then
-		print(('mrp_doorlock: %s (%s) didn\'t send a number! (Sent %s)'):format(xPlayer.name, xPlayer.identifier, doorID))
+		print(('mrp_doorlock: %s (%s) didn\'t send a number! (Sent %s)'):format(xPlayer.name, xPlayer.stateId, doorID))
 		return
 	end
 
 	if type(locked) ~= 'boolean' then
-		print(('mrp_doorlock: %s (%s) attempted to update invalid state! (Sent %s)'):format(xPlayer.name, xPlayer.identifier, locked))
+		print(('mrp_doorlock: %s (%s) attempted to update invalid state! (Sent %s)'):format(xPlayer.name, xPlayer.stateId, locked))
 		return
 	end
 
 	if not Config.DoorList[doorID] then
-		print(('mrp_doorlock: %s (%s) attempted to update invalid door! (Sent %s)'):format(xPlayer.name, xPlayer.identifier, doorID))
+		print(('mrp_doorlock: %s (%s) attempted to update invalid door! (Sent %s)'):format(xPlayer.name, xPlayer.stateId, doorID))
 		return
 	end
 	
-	if not IsAuthorized(xPlayer, Config.DoorList[doorID], usedLockpick) then
+	if not IsAuthorized(playerId, xPlayer, Config.DoorList[doorID], usedLockpick) then
 		return
 	end
 
@@ -45,18 +45,46 @@ AddEventHandler('mrp_doorlock:updateState', function(doorID, locked, src, usedLo
 end)
 
 RegisterServerEvent("mrp_doorlock:getDoorList")
-AddEventHandler('mrp_doorlock:getDoorList', function(source, data, uuid)
+AddEventHandler('mrp_doorlock:getDoorList', function(source, uuid)
     TriggerClientEvent("mrp_doorlock:getDoorList:response", source, Config.DoorList, uuid)
 end)
 
-function IsAuthorized(xPlayer, doorID, usedLockpick)
-	local jobName, grade = {}, {}
-	jobName[1] = xPlayer.job.name
-	grade[1] = xPlayer.job.grade
-	if xPlayer.job2 then
-		jobName[2] = xPlayer.job2.name
-		grade[2] = xPlayer.job2.grade
-	end
+function IsAuthorized(src, xPlayer, doorID, usedLockpick)
+    --TODO move to employement module
+    local p = promise.new()
+    local agg = {{
+        ['$match'] = {
+            ['char'] = xPlayer._id
+        }
+    }, {
+        ['$lookup'] = {
+            ['from'] = 'business',
+            ['let'] = {
+                ['eid'] = '$employment.business'
+            },
+            ['pipeline'] = {{
+                ['$match'] = {
+                    ['$expr'] = {
+                        ['$in'] = {
+                            '$_id', '$$eid'
+                        }
+                    }
+                }
+            }},
+            ['as'] = 'businessRefs'
+        }
+    }}
+    
+    local jobs = nil;
+
+    MRP_SERVER.aggregate('employment', agg, function(result)
+        if result then
+            jobs = result
+        end
+        p:resolve(true)
+    end)
+
+    Citizen.Await(p)
 	
 	if doorID.lockpick and usedLockpick then
 		local count = xPlayer.getInventoryItem('lockpick').count
@@ -65,9 +93,18 @@ function IsAuthorized(xPlayer, doorID, usedLockpick)
 
 	if doorID.authorizedJobs then
 		for job,rank in pairs(doorID.authorizedJobs) do
-			if (job == jobName[1] and rank <= grade[1]) or (jobName[2] and job == jobName[2] and rank <= grade[2]) then
-				return true
-			end
+            for i, playerJob in pairs(jobs) do
+                for x, empl in pairs(playerJob.employment) do
+                    if empl.business == job then
+                        return true
+                    end
+                end
+                for x, bus in pairs(playerJob.businessRefs) do
+                    if bus.name == job then
+                        return true
+                    end
+                end
+            end
 		end
 	end
 
@@ -84,8 +121,8 @@ function IsAuthorized(xPlayer, doorID, usedLockpick)
 		end
 	end
 
-	if Config.AdminAccess and IsPlayerAceAllowed(xPlayer.source, 'command.newdoor') then
-		print(xPlayer.group..' '..xPlayer.name..' opened a door using admin privileges')
+	if Config.AdminAccess and IsPlayerAceAllowed(src, 'command.newdoor') then
+		print(GetPlayerGroup(src)..' '..xPlayer.name..' opened a door using admin privileges')
 		return true
 	end
 	return false
