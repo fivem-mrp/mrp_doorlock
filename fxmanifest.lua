@@ -2,10 +2,8 @@ fx_version 'cerulean'
 games { 'gta5' }
 
 version '2.0.1'
-description 'https://github.com/thelindat/nui_doorlock'
-versioncheck 'https://raw.githubusercontent.com/thelindat/nui_doorlock/main/fxmanifest.lua'
-
-shared_script '@es_extended/imports.lua'
+description 'https://github.com/fivem-mrp/mrp_doorlock'
+versioncheck 'https://raw.githubusercontent.com/fivem-mrp/mrp_doorlock/main/fxmanifest.lua'
 
 server_scripts {
 	'config.lua',
@@ -18,7 +16,7 @@ client_scripts {
 	'client/main.lua'
 }
 
-dependency 'es_extended'
+dependency 'mrp_core'
 
 ui_page {
 	'html/door.html',
